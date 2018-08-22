@@ -51,6 +51,7 @@ if [ "\$MPD_HOST" ]; then HOST="\$MPD_HOST"; else HOST="localhost"; fi
 if [ "\$MPD_PORT" ]; then PORT="\$MPD_PORT"; else PORT="6600"; fi
 MPD_TCP="/dev/tcp/\$HOST/\$PORT"
 coverDir="\$HOME/.covers/"
+musicDir="\$HOME/Music/"
 tmpCover="/tmp/cover"
 baseCover="/usr/share/mpd-libnotify/extras/base.png"
 topCover="/usr/share/mpd-libnotify/extras/top.png"
@@ -60,6 +61,7 @@ mpdPID=\$(pidof mpd)
 mpdArtist="Could not find Artist's name"
 mpdTitle="Could not find Song's title"
 mpdAlbum="Could not find Album's name"
+mpdFile=""
 mpcLength="Could not find Song's length"
 mpcInfo="Cound not find Song's info"
 showCover="true"
@@ -87,6 +89,7 @@ function mpd_getinfo() {
 	mpdTitle=\$(grep "^Title: " <<< "\$_tmp" 2>/dev/null | sed "s/Title: //")
 	mpdArtist=\$(grep "^Artist: " <<< "\$_tmp" 2>/dev/null | sed "s/Artist: //")
 	mpdAlbum=\$(grep "^Album: " <<< "\$_tmp" 2>/dev/null | sed "s/Album: //")
+	mpdFile=\$(grep "^file: " <<< "\$_tmp" 2>/dev/null | sed "s/file: //")
 	_songtime=\$(grep "^Time: " <<< "\$_tmp" 2>/dev/null | sed "s/Time: //" | cut -f 1 -d :)
 	(( _mm=\$_songtime / 60 ))
 	[[ \${#_mm} -eq 1 ]] && _mm="0\$_mm"
@@ -102,17 +105,31 @@ function mpd_getinfo() {
 
 function fetch_cover() {
   album=\$1
+  mp3File=\$musicDir/\$2
   file="\$coverDir/\$album"
   if [ ! -f "\$file" ] ; then
-  	logger "\$file is not in covers... " >/dev/null
+    logger "\$file is not in covers... " >/dev/null
+    command -v eyeD3 >/dev/null 2>&1
+    if [[ \$? -eq 0 ]]; then
+        output=\$(eyeD3 --no-color --write-images="\$coverDir" "\$mp3File")
+        writtenFile=\$(echo "\$output" | grep "Writing" | sed -e "s/Writing \\(.*\\)\\.\\.\\./\\1/")
+        if [ ! -f "\$writtenFile" ] ; then
+            logger "Did not write a file: \\"\$writtenFile\\":" > /dev/null
+            logger "\$output" > /dev/null
+        else
+            mv "\$writtenFile" "\$file" 
+            logger "\\"\$file\\" retrieved from mp3 using eyeD3" >/dev/null
+        fi
+   else
         url="http://www.albumart.org/index.php?srchkey=\${album// /+}&itempage=1&newsearch=1&searchindex=Music"
-        cover_url=\$(curl -s "\$url" | awk -F 'src=' '/zoom-icon.jpg/ {print \$2}' | cut -d '"' -f 2 | head -n1)
+        cover_url=\$(curl -s "\$url" | awk -F 'src=' '/zoom-icon.jpg/ {print $\2}' | cut -d '"' -f 2 | head -n1)
         if [ -n "\$cover_url" ]; then
           logger "\$file retrieved and placed in covers directory..." >/dev/null
           wget -q -O "\$file" "\$cover_url"
-        else
-          logger "ERROR: Album cover not found online. Searched for: \${album// /+}" >/dev/null
-        fi
+      else
+          logger "ERROR: Album cover not found online. Searched for: $\{album// /+}" >/dev/null
+      fi
+  fi
   fi
 }
 
@@ -130,7 +147,7 @@ handle_event() {
 			if [ -f "\$coverDir/\$mpdAlbum" ]; then
 				cp "\$coverDir/\$mpdAlbum" /tmp/cover
 			else
-				fetch_cover "\$mpdAlbum"
+				fetch_cover "\$mpdAlbum" "\$mpdFile"
 				if [ -f "\$coverDir/\$mpdAlbum" ]; then
 					cp "\$coverDir/\$mpdAlbum" /tmp/cover
 				else
@@ -191,7 +208,7 @@ start_daemon() {
 
 stop_daemon() {
   if [ -f "$pid" ]; then
-    kill $(cat "$pid") || errorout 'error stopping daemon'
+    kill $(cat "$pid") || echo 'error stopping daemon.'
 
     rm "$pid"
   fi
