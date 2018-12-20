@@ -65,7 +65,7 @@ mpdFile=""
 mpcLength="Could not find Song's length"
 mpcInfo="Cound not find Song's info"
 showCover="true"
-expireTime="1300"
+expireTime="2300"
 #logout="true"
 
 
